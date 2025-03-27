@@ -1,5 +1,19 @@
+# Ignore macOS .DS_Store everywhere
 .DS_Store
-results
-data/*
+
+# Ignore everything in results/
+results/
+
+# Include results/preprocessing/ back (so Git can check exceptions)
+!results/preprocessing/
+
+# Ignore everything inside results/preprocessing/ except "counts"
+results/preprocessing/*
+!results/preprocessing/counts
+
+# Ignore everything inside data/
+data/
+
+# Allow specific files inside data/
 !data/samp_info.csv
 !data/accessions.txt
