@@ -1,0 +1,5 @@
+.DS_Store
+results
+data/*
+!data/samp_info.csv
+!data/accessions.txt
