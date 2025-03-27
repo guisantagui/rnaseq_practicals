@@ -12,6 +12,10 @@ if (!require(ggrepel, quietly = T)) install.packages("ggrepel")
 if(!require(factoextra, quietly = T)) install.packages("factoextra")
 if(!require(ggpubr, quietly = T)) install.packages("ggpubr")
 if (!require("argparser", quietly = T)) install.packages("argparser")
+if (!require("devtools", quietly = T)){
+        install.packages("devtools")
+}
+
 
 library(DESeq2)
 library(ggplot2)
@@ -27,16 +31,12 @@ parser <- arg_parser("Given a directory where aligmnent BAM files are and a gtf 
 
 parser <- add_argument(parser = parser,
                        arg = c("--gene_counts",
-                               "--ercc_counts",
                                "--sample_info",
-                               "--useERCCs",
                                "--outDir"),
                        help = c("CSV file with the gene counts.",
-                                "CSV file with the ERCC counts.",
                                 "CSV file with sample names in one column, and treatment info in another one.",
-                                "If ERCC should be taken into account for normalization.",
                                 "Output directory where placing the results."),
-                       flag = c(F, F, F, T, F))
+                       flag = c(F, F, F))
 
 parsed <- parse_args(parser)
 
@@ -94,11 +94,10 @@ plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
         dat <- data.frame(obsnames=row.names(PC$x), PC$x)
         dat <- dat[, c("obsnames", x, y)]
         colDat <- data.frame(dds@colData)
-        dat$treatment <- colDat$treatment[match(dat$obsnames, colDat$sample)]
+        dat$rhl_phen <- colDat$rhl_phen[match(dat$obsnames, colDat$sample)]
         propVar <- summary(PC)$importance[2, c(x, y)]
         propX <- round(propVar[names(propVar) == x]*100, digits = 2)
         propY <- round(propVar[names(propVar) == y]*100, digits = 2)
-        
         datapc <- data.frame(varnames=rownames(PC$rotation), 
                              PC$rotation)
         mult <- min(
@@ -116,7 +115,7 @@ plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
                 datapc <- datapc[datapc$varnames %in% varPlotFilt, ]
         }
         
-        pcaPlt <- ggplot(dat, aes(PC1, PC2, color=treatment, label = obsnames)) +
+        pcaPlt <- ggplot(dat, aes(PC1, PC2, color=rhl_phen, label = obsnames)) +
                 geom_point(size=3) +
                 xlab(sprintf("PC1 (%s %%)", propX)) +
                 ylab(sprintf("PC1 (%s %%)", propY)) + 
@@ -269,16 +268,12 @@ getVolcPlot <- function(fitObjct, alpha = 0.05,
 
 # Directory stuff
 ################################################################################
-#gene_counts_file <- "/Users/guillemsantamariaaguilar/Documents/100cia/applications/carlos_simon_foundation/round2/analysis/results/preprocessing/counts/ref/counts.csv"
-#ercc_counts_file <- "/Users/guillemsantamariaaguilar/Documents/100cia/applications/carlos_simon_foundation/round2/analysis/results/preprocessing/counts/ercc/counts.csv"
-#samp_info_file <- "/Users/guillemsantamariaaguilar/Documents/100cia/applications/carlos_simon_foundation/round2/analysis/data/sample_info.csv"
-#useERCCs <- T
-#outDir <- "/Users/guillemsantamariaaguilar/Documents/100cia/applications/carlos_simon_foundation/round2/analysis/results/DE/w_ercc/"
+gene_counts_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/preprocessing/counts/counts.csv"
+samp_info_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/data/sample_info.csv"
+outDir <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/DE/"
 
 gene_counts_file <- parsed$gene_counts
-ercc_counts_file <- parsed$ercc_counts
 samp_info_file <- parsed$sample_info
-useERCCs <- parsed$useERCCs
 outDir <- addSlashIfNot(parsed$outDir)
 
 createIfNot(outDir)
@@ -286,42 +281,29 @@ createIfNot(outDir)
 # Load data
 ################################################################################
 gene_counts <- read.csv(gene_counts_file, row.names = 1)
-ercc_counts <- read.csv(ercc_counts_file, row.names = 1)
 samp_info <- read.csv(samp_info_file, row.names = 1)
 
 # Filter low expressed genes
 gene_counts <- gene_counts[rowSums(gene_counts) != 0, ]
-ercc_counts <- ercc_counts[rowSums(ercc_counts) != 0, ]
 
 print(sprintf("%s genomic features don't have zeros accross all the samples",
               nrow(gene_counts)))
-print(sprintf("%s ERCC features don't have zeros accross all the samples",
-              nrow(ercc_counts)))
 
 #gene_counts <- gene_counts[, colnames(gene_counts) != "SRR5223570"]
-#ercc_counts <- ercc_counts[, colnames(ercc_counts) != "SRR5223570"]
 #samp_info <- samp_info[samp_info$sample != "SRR5223570", ]
 
-samp_info$treatment <- factor(samp_info$treatment, levels = c("ctrl", "TGFB"))
+samp_info$rhl_pheno <- factor(samp_info$rhl_pheno, levels = c("non_producer", "producer"))
 
 # Create DESeq object
 ################################################################################
 
-counts_merged <- rbind.data.frame(gene_counts,
-                                  ercc_counts)
+# Change accession names to actual sample names
+colnames(gene_counts) <- samp_info$sample[match(colnames(gene_counts),
+                                                samp_info$accession)]
 
-if (useERCCs){
-        dds <- DESeqDataSetFromMatrix(countData = counts_merged,
-                                      colData = samp_info,
-                                      design = ~treatment)
-        dds <- estimateSizeFactors(dds,
-                                   controlGenes = rownames(dds) %in%
-                                           rownames(ercc_counts))
-}else{
-        dds <- DESeqDataSetFromMatrix(countData = gene_counts,
-                                      colData = samp_info,
-                                      design = ~treatment)
-}
+dds <- DESeqDataSetFromMatrix(countData = gene_counts,
+                              colData = samp_info,
+                              design = ~rhl_pheno)
 
 # Run DESeq
 ################################################################################
@@ -330,7 +312,7 @@ dds <- DESeq(dds)
 # Obtain results dataframe
 results <- results(dds)
 # Shrink logFC, given that we have small sample size
-resLFC <- lfcShrink(dds, coef="treatment_TGFB_vs_ctrl", type="apeglm")
+resLFC <- lfcShrink(dds, coef="rhl_pheno_producer_vs_non_producer", type="apeglm")
 
 # Save results dataframes
 write.csv(as.data.frame(results),
@@ -340,11 +322,6 @@ write.csv(as.data.frame(results),
 write.csv(as.data.frame(resLFC),
           file = sprintf("%sDESeqRes_LFCShrunk.csv",
                          outDir))
-# Plot diagnostic plots
-pdf(file = sprintf("%sdispEsts.pdf", outDir), height = 5, width = 5)
-plotDispEsts(dds[!rownames(dds) %in% rownames(ercc_counts), ],
-             ylim = c(1e-06, 1e02))
-dev.off()
 
 pdf(file = sprintf("%sMAPlot.pdf", outDir), height = 5, width = 5)
 DESeq2::plotMA(results)
@@ -398,10 +375,3 @@ volcPlotComb <- ggarrange(volcPlot_top10Genes_logFC,
 ggsave(filename = sprintf("%svolcPlots.pdf", outDir),
        height = 4, width = 8,
        plot = volcPlotComb)
-
-# Get FC of FOXP3 and plot it
-pdf(file = sprintf("%sFOXP3_counts.pdf", outDir), height = 5, width = 5)
-plotCounts(dds, "FOXP3", intgroup = "treatment")
-dev.off()
-
-capture.output(print(resLFC["FOXP3", ]), file = sprintf("%sFOXP3.txt", outDir))

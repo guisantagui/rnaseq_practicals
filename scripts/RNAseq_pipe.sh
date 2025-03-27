@@ -21,11 +21,7 @@ qc_pretrim="${results_dir}qc_pretrim/"
 qc_postrim="${results_dir}qc_postrim/"
 trim_dir="${results_dir}trimmed/"
 align_dir="${results_dir}aligned/"
-#align_ref_dir="${align_dir}ref/"
-#align_ercc_dir="${align_dir}ercc/"
 counts_dir="${results_dir}counts/"
-#counts_ref_dir="${counts_dir}ref/"
-#counts_ercc_dir="${counts_dir}ercc/"
 
 mkdir -p $ref_dir
 mkdir -p $results
@@ -103,33 +99,26 @@ done < "${data_dir}accessions.txt"
 # Obtain alignment stats with picard
 while read -r acc; do
   echo "Obtaining alignment stats of ${acc} with Picard..."
-  align_ref_samp_dir="${align_ref_dir}${acc}/"
+  align_samp_dir="${align_dir}${acc}/"
   # Perform some QCs
   picard CollectAlignmentSummaryMetrics \
          R="${ref_dir}GCF_000001405.26_GRCh38_genomic.fna" \
-         I="${align_ref_samp_dir}${acc}_Aligned.sortedByCoord.out.bam" \
-         O="${align_ref_samp_dir}${acc}_picard_alignment_summary_metrics.txt"
+         I="${align_samp_dir}${acc}_Aligned.sortedByCoord.out.bam" \
+         O="${align_samp_dir}${acc}_picard_alignment_summary_metrics.txt"
 
   picard CollectInsertSizeMetrics \
-         I="${align_ref_samp_dir}${acc}_Aligned.sortedByCoord.out.bam" \
-         O="${align_ref_samp_dir}${acc}_picard_insert_size_metrics.txt" \
-         H="${align_ref_samp_dir}${acc}_insert_size_histogram.pdf" \
+         I="${align_samp_dir}${acc}_Aligned.sortedByCoord.out.bam" \
+         O="${align_samp_dir}${acc}_picard_insert_size_metrics.txt" \
+         H="${align_samp_dir}${acc}_insert_size_histogram.pdf" \
          M=0.5
 done < "${data_dir}accessions.txt"
 
 # Obtain counts from the reference alignments and parse them in a CSV matrix
-Rscript scripts/get_counts.R $align_ref_dir \
-        --annotFile "${ref_dir}GCF_000001405.26_GRCh38_genomic.gtf" \
-        --att "gene_name" \
+Rscript scripts/get_counts.R $align_dir \
+        --annotFile "${ref_dir}GCF_000014625.1_ASM1462v1_genomic.gtf" \
+        --att "locus_tag" \
         --strand $strand \
-        --outDir $counts_ref_dir 
-
-# Obtain counts from the ERCC alignments and parse them in a CSV matrix
-Rscript scripts/get_counts.R $align_ercc_dir \
-        --annotFile "${ercc_dir}ERCC92.gtf" \
-        --att "gene_id" \
-        --strand $strand \
-        --outDir $counts_ercc_dir 
+        --outDir $counts_dir 
 
 # Obtain MultiQC reports
 multiqc $(find $qc_pretrim -type f -name "*.zip" -not -name "*_val_*") \
@@ -145,16 +134,9 @@ multiqc $(find $qc_postrim -type f -name "*.zip" -and -name "*_val_*") \
 DE_dir="results/DE/"
 mkdir -p $DE_dir
 
-Rscript scripts/DE.R --gene_counts "${counts_ref_dir}counts.csv" \
-        --ercc_counts "${counts_ercc_dir}counts.csv" \
+Rscript scripts/DE.R --gene_counts "${counts_dir}counts.csv" \
         --sample_info "${data_dir}sample_info.csv" \
-        --useERCCs \
-        --outDir "${DE_dir}w_ercc/"
-
-Rscript scripts/DE.R --gene_counts "${counts_ref_dir}counts.csv" \
-        --ercc_counts "${counts_ercc_dir}counts.csv" \
-        --sample_info "${data_dir}sample_info.csv" \
-        --outDir "${DE_dir}wo_ercc/"
+        --outDir "$DE_dir"
 
 # Functional enrichment
 ####################################################################################################

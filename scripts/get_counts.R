@@ -79,7 +79,7 @@ for(d in list.dirs(alignDir, recursive = F)){
                               isPairedEnd = T,
                               isGTFAnnotationFile = T,
                               GTF.attrType = att,
-                              GTF.featureType = "exon",
+                              GTF.featureType = "CDS",
                               strandSpecific = std_int)
         cntsLst[[samp_name]] <- cnts
 }

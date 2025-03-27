@@ -118,3 +118,9 @@ echo 'export PATH=$HOME/TrimGalore-0.6.10/:$PATH' >> ~/.bashrc
 # If /bin/zsh
 echo 'export PATH=$HOME/TrimGalore-0.6.10/:$PATH' >> ~/.zshrc
 ```
+
+### Picard
+For performing quality control (among other things) of the actual alignment.
+```bash
+brew install picard-tools
+```
