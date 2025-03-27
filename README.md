@@ -124,3 +124,9 @@ For performing quality control (among other things) of the actual alignment.
 ```bash
 brew install picard-tools
 ```
+
+## Run pipeline
+```bash
+cd scripts
+bash RNAseq_pipe.sh
+```

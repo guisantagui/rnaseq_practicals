@@ -10,6 +10,8 @@ results/
 # Ignore everything inside results/preprocessing/ except "counts"
 results/preprocessing/*
 !results/preprocessing/counts
+!results/preprocessing/counts/
+!results/preprocessing/counts/*
 
 # Ignore everything inside data/
 data/
