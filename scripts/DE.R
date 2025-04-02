@@ -6,14 +6,26 @@ if (!require("BiocManager", quietly = T))
         install.packages("BiocManager")
 if (!require("DESeq2", quietly = T))
         BiocManager::install("DESeq2", update = F)
-if (!require(ggplot2, quietly = T)) install.packages("ggplot2")
-if (!require(ggtext, quietly = T)) install.packages("ggtext")
-if (!require(ggrepel, quietly = T)) install.packages("ggrepel")
-if(!require(factoextra, quietly = T)) install.packages("factoextra")
-if(!require(ggpubr, quietly = T)) install.packages("ggpubr")
-if (!require("argparser", quietly = T)) install.packages("argparser")
+if (!require(ggplot2, quietly = T)){
+        install.packages("ggplot2", repos='http://cran.us.r-project.org')
+}
+if (!require(ggtext, quietly = T)){
+        install.packages("ggtext", repos='http://cran.us.r-project.org')
+}
+if (!require(ggrepel, quietly = T)){
+        install.packages("ggrepel", repos='http://cran.us.r-project.org')
+}
+if(!require(factoextra, quietly = T)){
+        install.packages("factoextra", repos='http://cran.us.r-project.org')
+}
+if(!require(ggpubr, quietly = T)){
+        install.packages("ggpubr", repos='http://cran.us.r-project.org')
+}
+if (!require("argparser", quietly = T)){
+        install.packages("argparser", repos='http://cran.us.r-project.org')
+}
 if (!require("devtools", quietly = T)){
-        install.packages("devtools")
+        install.packages("devtools", repos='http://cran.us.r-project.org')
 }
 
 

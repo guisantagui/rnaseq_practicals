@@ -33,6 +33,15 @@ mkdir -p $idx_dir
 mkdir -p $align_dir
 mkdir -p $counts_dir
 
+genome_url="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/014/625/GCA_000014625.1_ASM1462v1/GCA_000014625.1_ASM1462v1_genomic.fna.gz"
+annote_url="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/014/625/GCA_000014625.1_ASM1462v1/GCA_000014625.1_ASM1462v1_genomic.gtf.gz"
+
+genome_file=$(basename $genome_url)
+annote_file=$(basename $annote_url)
+
+genome_file="${genome_file%.gz}"
+annote_file="${annote_file%.gz}"
+
 ####################################################################################################
 # Pipeline                                                                                         #
 ####################################################################################################
@@ -41,8 +50,11 @@ mkdir -p $counts_dir
 ####################################################################################################
 
 cd $ref_dir
-wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/014/625/GCF_000014625.1_ASM1462v1/GCF_000014625.1_ASM1462v1_genomic.fna.gz
-wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/014/625/GCF_000014625.1_ASM1462v1/GCF_000014625.1_ASM1462v1_genomic.gtf.gz
+#wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/014/625/GCF_000014625.1_ASM1462v1/GCF_000014625.1_ASM1462v1_genomic.fna.gz
+#wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/014/625/GCF_000014625.1_ASM1462v1/GCF_000014625.1_ASM1462v1_genomic.gtf.gz
+
+wget $genome_url
+wget $annote_url
 
 gunzip *.fna.gz
 gunzip *.gtf.gz
@@ -53,9 +65,15 @@ cd ../..
 cd $data_dir
 
 while read -r accession; do
-  echo "Downloading accession: $accession"
-  prefetch $accession
-  fasterq-dump $accession
+  fastq_1="${accession}_1.fastq"
+  fastq_2="${accession}_2.fastq"
+  if [[ ! -f "$fastq_1" || ! -f "$fastq_2" ]]; then
+    echo "Downloading accession: $accession"
+    prefetch $accession
+    fasterq-dump $accession
+  else
+    echo "$accession has already been dumped. Skipping."
+  fi
 done < $accessions_file
 
 cd ..
@@ -68,8 +86,8 @@ if [ ! "$(ls -A $idx_dir)" ]; then
   STAR --runThreadN 8 \
        --runMode genomeGenerate \
        --genomeDir $idx_dir \
-       --genomeFastaFiles "${ref_dir}GCF_000014625.1_ASM1462v1_genomic.fna" \
-       --sjdbGTFfile "${ref_dir}GCF_000014625.1_ASM1462v1_genomic.gtf" \
+       --genomeFastaFiles "${ref_dir}${genome_file}" \
+       --sjdbGTFfile "${ref_dir}${annote_file}" \
        --sjdbOverhang 72
 fi
 
@@ -77,26 +95,30 @@ fi
 while read -r acc; do
   fastqc_out_1="${qc_pretrim}${acc}_1_fastqc.html"
   fastqc_out_2="${qc_pretrim}${acc}_2_fastqc.html"
-  trimmed_1="${trim_dir}/${acc}_1_val_1.fq"
-  trimmed_2="${trim_dir}/${acc}_2_val_2.fq"
-  if [[ ! -f "$fastqc_out_1" || ! -f "$fastqc_out_1" ]]; then
+  if [[ ! -f "$fastqc_out_1" || ! -f "$fastqc_out_2" ]]; then
     # Run FASTQC
     echo "Running FASTQC for $acc"
-    fastqc "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"  -o $qc_pretrim
+    fastqc "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"  -o $qc_pretrim &
   else
     echo "FASTQC already done for: $acc. Skipping."
   fi
+done < "${data_dir}${accessions_file}"
+wait
 
+while read -r acc; do
+  trimmed_1="${trim_dir}/${acc}_1_val_1.fq"
+  trimmed_2="${trim_dir}/${acc}_2_val_2.fq"
   if [[ ! -f "$trimmed_1" || ! -f "$trimmed_2" ]]; then
     # Trim
     echo "Trimming reads for: $acc"
     trim_galore --paired --quality $min_phred --length $min_read_size --phred33 --fastqc \
                 --fastqc_args "-o ${qc_postrim}" -o $trim_dir \
-                "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"
+                "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq" &
   else
     echo "Trimmed files already exist for: $acc. Skipping trimming."
   fi
 done < "${data_dir}${accessions_file}"
+wait
 
 # Align trimmed reads to the index
 while read -r acc; do
@@ -113,9 +135,10 @@ while read -r acc; do
          --runThreadN 10 \
          --outFileNamePrefix "${align_samp_dir}${acc}_" \
          --outSAMtype BAM SortedByCoordinate \
-         --outSAMunmapped Within KeepPairs
+         --outSAMunmapped Within KeepPairs &
   fi
-done < "${data_dir}${$accessions_file}"
+done < "${data_dir}${accessions_file}"
+wait
 
 # Obtain alignment stats with picard
 while read -r acc; do
@@ -123,7 +146,7 @@ while read -r acc; do
   align_samp_dir="${align_dir}${acc}/"
   # Perform some QCs
   picard CollectAlignmentSummaryMetrics \
-         R="${ref_dir}GCF_000001405.26_GRCh38_genomic.fna" \
+         R="${ref_dir}${genome_file}" \
          I="${align_samp_dir}${acc}_Aligned.sortedByCoord.out.bam" \
          O="${align_samp_dir}${acc}_picard_alignment_summary_metrics.txt"
 
@@ -136,7 +159,7 @@ done < "${data_dir}${$accessions_file}"
 
 # Obtain counts from the reference alignments and parse them in a CSV matrix
 Rscript scripts/get_counts.R $align_dir \
-        --annotFile "${ref_dir}GCF_000014625.1_ASM1462v1_genomic.gtf" \
+        --annotFile "${ref_dir}${annote_file}" \
         --att "locus_tag" \
         --strand $strand \
         --outDir $counts_dir 

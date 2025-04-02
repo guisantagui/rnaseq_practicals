@@ -3,10 +3,13 @@
 # files are and a gtf annotation file, obtain a counts matrix.                 #
 ################################################################################
 if (!require("BiocManager", quietly = T))
-        install.packages("BiocManager")
+        install.packages("BiocManager", repos='http://cran.us.r-project.org')
 if (!require("Rsubread", quietly = T))
         BiocManager::install("Rsubread", update = F)
-if (!require("argparser", quietly = T)) install.packages("argparser")
+if (!require("argparser", quietly = T)) install.packages("argparser", repos='http://cran.us.r-project.org')
+
+library(Rsubread)
+library(argparser)
 
 library(Rsubread)
 library(argparser)
