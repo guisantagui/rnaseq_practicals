@@ -12,6 +12,7 @@ strand="reverse"
 cd ..
 #source rnaseq_preproc/bin/activate
 
+accessions_file="accessions_all.txt"
 data_dir="data/"
 ref_dir="${data_dir}reference/"
 idx_dir="${ref_dir}PA14_idx/"
@@ -55,7 +56,7 @@ while read -r accession; do
   echo "Downloading accession: $accession"
   prefetch $accession
   fasterq-dump $accession
-done < accessions.txt
+done < $accessions_file
 
 cd ..
 
@@ -74,27 +75,47 @@ fi
 
 # Read accessions.txt and for each accession run fastqc, trim reads and align with STAR
 while read -r acc; do
-  # Run FASTQC
-  echo "Processing: $acc"
-  fastqc "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"  -o $qc_pretrim
-  # Trim
-  trim_galore --paired --quality $min_phred --length $min_read_size --phred33 --fastqc \
-              --fastqc_args "-o ${qc_postrim}" -o $trim_dir \
-              "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"
-done < "${data_dir}accessions.txt"
+  fastqc_out_1="${qc_pretrim}${acc}_1_fastqc.html"
+  fastqc_out_2="${qc_pretrim}${acc}_2_fastqc.html"
+  trimmed_1="${trim_dir}/${acc}_1_val_1.fq"
+  trimmed_2="${trim_dir}/${acc}_2_val_2.fq"
+  if [[ ! -f "$fastqc_out_1" || ! -f "$fastqc_out_1" ]]; then
+    # Run FASTQC
+    echo "Running FASTQC for $acc"
+    fastqc "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"  -o $qc_pretrim
+  else
+    echo "FASTQC already done for: $acc. Skipping."
+  fi
+
+  if [[ ! -f "$trimmed_1" || ! -f "$trimmed_2" ]]; then
+    # Trim
+    echo "Trimming reads for: $acc"
+    trim_galore --paired --quality $min_phred --length $min_read_size --phred33 --fastqc \
+                --fastqc_args "-o ${qc_postrim}" -o $trim_dir \
+                "${data_dir}${acc}_1.fastq" "${data_dir}${acc}_2.fastq"
+  else
+    echo "Trimmed files already exist for: $acc. Skipping trimming."
+  fi
+done < "${data_dir}${accessions_file}"
 
 # Align trimmed reads to the index
 while read -r acc; do
   echo "Aligning ${acc} to reference genome..."
   align_samp_dir="${align_dir}${acc}/"
   mkdir -p $align_samp_dir
-  STAR --genomeDir $idx_dir \
-       --readFilesIn "${trim_dir}${acc}_1_val_1.fq" "${trim_dir}${acc}_2_val_2.fq"\
-       --runThreadN 10 \
-       --outFileNamePrefix "${align_samp_dir}${acc}_" \
-       --outSAMtype BAM SortedByCoordinate \
-       --outSAMunmapped Within KeepPairs
-done < "${data_dir}accessions.txt"
+  aligned_bam="${align_samp_dir}/${acc}_Aligned.sortedByCoord.out.bam"
+  if [[ -f "$aligned_bam" ]]; then
+    echo "Alignment already done for ${acc}. Skipping alignment."
+  else
+    echo "Aligning ${acc} to reference genome..."
+    STAR --genomeDir $idx_dir \
+         --readFilesIn "${trim_dir}${acc}_1_val_1.fq" "${trim_dir}${acc}_2_val_2.fq"\
+         --runThreadN 10 \
+         --outFileNamePrefix "${align_samp_dir}${acc}_" \
+         --outSAMtype BAM SortedByCoordinate \
+         --outSAMunmapped Within KeepPairs
+  fi
+done < "${data_dir}${$accessions_file}"
 
 # Obtain alignment stats with picard
 while read -r acc; do
@@ -111,7 +132,7 @@ while read -r acc; do
          O="${align_samp_dir}${acc}_picard_insert_size_metrics.txt" \
          H="${align_samp_dir}${acc}_insert_size_histogram.pdf" \
          M=0.5
-done < "${data_dir}accessions.txt"
+done < "${data_dir}${$accessions_file}"
 
 # Obtain counts from the reference alignments and parse them in a CSV matrix
 Rscript scripts/get_counts.R $align_dir \
