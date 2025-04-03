@@ -286,6 +286,7 @@ getVolcPlot <- function(fitObjct, alpha = 0.05,
 ################################################################################
 gene_counts_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/preprocessing/counts/counts.csv"
 samp_info_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/data/sample_info.csv"
+pathway_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/data/kegg_pathways.csv"
 outDir <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/DE/"
 
 gene_counts_file <- parsed$gene_counts
@@ -298,6 +299,7 @@ createIfNot(outDir)
 ################################################################################
 gene_counts <- read.csv(gene_counts_file, row.names = 1)
 samp_info <- read.csv(samp_info_file, row.names = 1)
+pathways <- read.csv(pathway_file, row.names = 1)
 
 # Filter low expressed genes
 gene_counts <- gene_counts[rowSums(gene_counts) != 0, ]
@@ -362,6 +364,20 @@ ggsave(filename = sprintf("%spca_rlog.pdf", outDir),
        height = 4,
        plot = pcaPlot)
 
+# Do PCA and plot it 
+pcaPlot <- plotPCACust(assay(rlog(dds)),
+                       scale = F,
+                       labs = T,
+                       biplot = T,
+                       topNFeats = 5,
+                       color = "rhl_pheno_3_cats",
+                       coord_fixed = F)
+
+ggsave(filename = sprintf("%spca_rlog_3cats.pdf", outDir),
+       width = 5,
+       height = 4,
+       plot = pcaPlot)
+
 # Plot p-value histograms
 pval_hist <- plot_pval_hist(results,
                             what_pval = "pvalue",
@@ -394,3 +410,34 @@ volcPlotComb <- ggarrange(volcPlot_top10Genes_logFC,
 ggsave(filename = sprintf("%svolcPlots.pdf", outDir),
        height = 4, width = 8,
        plot = volcPlotComb)
+
+# Run functional enrichment
+################################################################################
+DEGs <- rownames(results[results$padj <= 0.05, ])
+do_ORA <- function(DEGs, pathway_df, alternative = "greater", padj_method = "BH"){
+        DEGs <- DEGs[DEGs %in% pathway_df$locus_tag]
+        bg_genes <- unique(pathway_df$locus_tag)
+        alternative = "greater"
+        pws <- unique(pathway_df$pathway_id)
+        pvals <- c()
+        for (i in seq_along(pws)){
+                pw <- pws[i]
+                pw_genes <- unique(pathway_df$locus_tag[pathway_df$pathway_id == pw])
+                DEGs_in_pw <- sum(DEGs %in% pw_genes)
+                DEGs_not_pw <- sum(!DEGs %in% pw_genes)
+                genes_in_pw <- length(unique(pw_genes)) - DEGs_in_pw
+                genes_not_pw <- sum((!bg_genes %in% DEGs) & (!bg_genes %in% pw_genes))
+                cont_tab <- matrix(c(DEGs_in_pw, DEGs_not_pw, genes_in_pw, genes_not_pw),
+                                   nrow = 2)
+                pval <- fisher.test(cont_tab, alternative = alternative)$p.value
+                pvals <- c(pvals, pval)
+        }
+        out <- data.frame(pathway_id = pws,
+                          pathway_name = pathway_df$pathway_name[match(pws, pathway_df$pathway_id)],
+                          p_value = pvals,
+                          p_adj = p.adjust(pvals, method = padj_method))
+        return(out)
+}
+
+ora_res <- do_ORA(DEGs, pathway_df = pathways)
+ora_res[ora_res$p_adj <= 0.05, ]
