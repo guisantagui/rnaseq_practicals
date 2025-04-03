@@ -155,7 +155,7 @@ while read -r acc; do
          O="${align_samp_dir}${acc}_picard_insert_size_metrics.txt" \
          H="${align_samp_dir}${acc}_insert_size_histogram.pdf" \
          M=0.5
-done < "${data_dir}${$accessions_file}"
+done < "${data_dir}${accessions_file}"
 
 # Obtain counts from the reference alignments and parse them in a CSV matrix
 Rscript scripts/get_counts.R $align_dir \
