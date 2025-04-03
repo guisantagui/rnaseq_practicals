@@ -19,3 +19,4 @@ data/
 # Allow specific files inside data/
 !data/samp_info.csv
 !data/accessions.txt
+!data/kegg_pathways.csv

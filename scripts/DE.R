@@ -86,7 +86,8 @@ getTopContrib <- function(PC, topN = 12, x = "PC1", y = "PC2"){
 
 # Do and plot a PCA.
 plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
-                        labs = F, topNFeats = NULL, biplot = F){
+                        labs = F, topNFeats = NULL, biplot = F, color,
+                        coord_fixed = T){
         if (scale){
                 df <- apply(df, 1, function(x) (x - mean(x))/sd(x))
         }else{
@@ -106,7 +107,8 @@ plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
         dat <- data.frame(obsnames=row.names(PC$x), PC$x)
         dat <- dat[, c("obsnames", x, y)]
         colDat <- data.frame(dds@colData)
-        dat$rhl_phen <- colDat$rhl_phen[match(dat$obsnames, colDat$sample)]
+        dat <- cbind.data.frame(dat,
+                                colDat[match(dat$obsnames, colDat$sample), !colnames(colDat) %in% c("accession", "sample")])
         propVar <- summary(PC)$importance[2, c(x, y)]
         propX <- round(propVar[names(propVar) == x]*100, digits = 2)
         propY <- round(propVar[names(propVar) == y]*100, digits = 2)
@@ -127,11 +129,10 @@ plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
                 datapc <- datapc[datapc$varnames %in% varPlotFilt, ]
         }
         
-        pcaPlt <- ggplot(dat, aes(PC1, PC2, color=rhl_phen, label = obsnames)) +
+        pcaPlt <- ggplot(dat, aes(PC1, PC2, color=!!sym(color), label = obsnames)) +
                 geom_point(size=3) +
                 xlab(sprintf("PC1 (%s %%)", propX)) +
                 ylab(sprintf("PC1 (%s %%)", propY)) + 
-                coord_fixed() +
                 theme(title = ggtext::element_markdown(),
                       axis.title.y = ggtext::element_markdown(),
                       panel.background = element_blank(),
@@ -139,6 +140,9 @@ plotPCACust <- function(df, scale = F, x = "PC1", y = "PC2", ntop = NA,
                                                   linewidth = 1),
                       panel.grid.major = element_line(colour = "#d4d4d4"),
                       legend.position = "right")
+        if (coord_fixed){
+                pcaPlt <- pcaPlt + coord_fixed()
+        }
         if (labs){
                 pcaPlt <- pcaPlt +
                         geom_text_repel()
@@ -304,7 +308,7 @@ print(sprintf("%s genomic features don't have zeros accross all the samples",
 #gene_counts <- gene_counts[, colnames(gene_counts) != "SRR5223570"]
 #samp_info <- samp_info[samp_info$sample != "SRR5223570", ]
 
-samp_info$rhl_pheno <- factor(samp_info$rhl_pheno, levels = c("non_producer", "producer"))
+samp_info$rhl_pheno_2_cats <- factor(samp_info$rhl_pheno_2_cats, levels = c("not_producer", "producer"))
 
 # Create DESeq object
 ################################################################################
@@ -312,10 +316,11 @@ samp_info$rhl_pheno <- factor(samp_info$rhl_pheno, levels = c("non_producer", "p
 # Change accession names to actual sample names
 colnames(gene_counts) <- samp_info$sample[match(colnames(gene_counts),
                                                 samp_info$accession)]
+samp_info <- samp_info[match(colnames(gene_counts), samp_info$sample), ]
 
 dds <- DESeqDataSetFromMatrix(countData = gene_counts,
                               colData = samp_info,
-                              design = ~rhl_pheno)
+                              design = ~rhl_pheno_2_cats)
 
 # Run DESeq
 ################################################################################
@@ -324,7 +329,7 @@ dds <- DESeq(dds)
 # Obtain results dataframe
 results <- results(dds)
 # Shrink logFC, given that we have small sample size
-resLFC <- lfcShrink(dds, coef="rhl_pheno_producer_vs_non_producer", type="apeglm")
+resLFC <- lfcShrink(dds, coef="rhl_pheno_2_cats_producer_vs_not_producer", type="apeglm")
 
 # Save results dataframes
 write.csv(as.data.frame(results),
@@ -348,11 +353,13 @@ pcaPlot <- plotPCACust(assay(rlog(dds)),
                        scale = F,
                        labs = T,
                        biplot = T,
-                       topNFeats = 5)
+                       topNFeats = 5,
+                       color = "rhl_pheno_2_cats",
+                       coord_fixed = F)
 
 ggsave(filename = sprintf("%spca_rlog.pdf", outDir),
        width = 5,
-       height = 5,
+       height = 4,
        plot = pcaPlot)
 
 # Plot p-value histograms
