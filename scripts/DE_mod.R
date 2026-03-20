@@ -21,13 +21,15 @@ if(!require(factoextra, quietly = T)){
 if(!require(ggpubr, quietly = T)){
         install.packages("ggpubr", repos='http://cran.us.r-project.org')
 }
-if (!require("argparser", quietly = T)){
-        install.packages("argparser", repos='http://cran.us.r-project.org')
-}
 if (!require("devtools", quietly = T)){
         install.packages("devtools", repos='http://cran.us.r-project.org')
 }
-
+if (!require("rtracklayer", quietly = TRUE)){
+        BiocManager::install("rtracklayer", update = FALSE)
+}
+if (!require("apeglm", quietly = TRUE)){
+        BiocManager::install("apeglm", update = FALSE)
+}
 
 library(DESeq2)
 library(ggplot2)
@@ -35,22 +37,7 @@ library(ggtext)
 library(ggrepel)
 library(factoextra)
 library(ggpubr)
-library(argparser)
-
-# Terminal argument parser
-################################################################################
-parser <- arg_parser("Given a directory where aligmnent BAM files are and a gtf annotation file, obtain a counts matrix.")
-
-parser <- add_argument(parser = parser,
-                       arg = c("--gene_counts",
-                               "--sample_info",
-                               "--outDir"),
-                       help = c("CSV file with the gene counts.",
-                                "CSV file with sample names in one column, and treatment info in another one.",
-                                "Output directory where placing the results."),
-                       flag = c(F, F, F))
-
-parsed <- parse_args(parser)
+library(rtracklayer)
 
 # Functions
 ################################################################################
@@ -284,14 +271,11 @@ getVolcPlot <- function(fitObjct, alpha = 0.05,
 
 # Directory stuff
 ################################################################################
-gene_counts_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/preprocessing/counts/counts.csv"
-samp_info_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/data/sample_info.csv"
-pathway_file <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/data/kegg_pathways.csv"
-outDir <- "/Users/guillem.santamaria/Documents/postdoc/teaching_practical/RNAseq_pipe/results/DE/"
-
-gene_counts_file <- parsed$gene_counts
-samp_info_file <- parsed$sample_info
-outDir <- addSlashIfNot(parsed$outDir)
+gene_counts_file <- "../results/preprocessing/counts/counts.csv"
+samp_info_file <- "../data/sample_info.csv"
+pathway_file <- "../data/kegg_pathways.csv"
+annot_file <- "../data/reference/GCA_000014625.1_ASM1462v1_genomic.gtf"
+outDir <- "../results/DE/"
 
 createIfNot(outDir)
 
@@ -300,6 +284,16 @@ createIfNot(outDir)
 gene_counts <- read.csv(gene_counts_file, row.names = 1)
 samp_info <- read.csv(samp_info_file, row.names = 1)
 pathways <- read.csv(pathway_file, row.names = 1)
+
+annot <- readGFF(annot_file)
+
+View(annot)
+
+annot <- annot[annot$type == "CDS", ]
+
+annot$gene_name <- annot$gene
+annot$gene_name[is.na(annot$gene_name)] <- annot$locus_tag[is.na(annot$gene_name)]
+
 
 # Filter low expressed genes
 gene_counts <- gene_counts[rowSums(gene_counts) != 0, ]
@@ -310,7 +304,10 @@ print(sprintf("%s genomic features don't have zeros accross all the samples",
 #gene_counts <- gene_counts[, colnames(gene_counts) != "SRR5223570"]
 #samp_info <- samp_info[samp_info$sample != "SRR5223570", ]
 
-samp_info$rhl_pheno_2_cats <- factor(samp_info$rhl_pheno_2_cats, levels = c("not_producer", "producer"))
+samp_info$rhl_pheno_2_cats <- factor(
+        samp_info$rhl_pheno_2_cats,
+        levels = c("not_producer", "producer")
+)
 
 # Create DESeq object
 ################################################################################
@@ -318,6 +315,7 @@ samp_info$rhl_pheno_2_cats <- factor(samp_info$rhl_pheno_2_cats, levels = c("not
 # Change accession names to actual sample names
 colnames(gene_counts) <- samp_info$sample[match(colnames(gene_counts),
                                                 samp_info$accession)]
+
 samp_info <- samp_info[match(colnames(gene_counts), samp_info$sample), ]
 
 dds <- DESeqDataSetFromMatrix(countData = gene_counts,
@@ -331,7 +329,11 @@ dds <- DESeq(dds)
 # Obtain results dataframe
 results <- results(dds)
 # Shrink logFC, given that we have small sample size
-resLFC <- lfcShrink(dds, coef="rhl_pheno_2_cats_producer_vs_not_producer", type="apeglm")
+resLFC <- lfcShrink(
+        dds,
+        coef="rhl_pheno_2_cats_producer_vs_not_producer",
+        type="apeglm"
+)
 
 # Save results dataframes
 write.csv(as.data.frame(results),
@@ -360,8 +362,8 @@ pcaPlot <- plotPCACust(assay(rlog(dds)),
                        coord_fixed = F)
 
 ggsave(filename = sprintf("%spca_rlog.pdf", outDir),
-       width = 5,
-       height = 4,
+       width = 10,
+       height = 8,
        plot = pcaPlot)
 
 # Do PCA and plot it 
@@ -374,8 +376,8 @@ pcaPlot <- plotPCACust(assay(rlog(dds)),
                        coord_fixed = F)
 
 ggsave(filename = sprintf("%spca_rlog_3cats.pdf", outDir),
-       width = 5,
-       height = 4,
+       width = 10,
+       height = 8,
        plot = pcaPlot)
 
 # Plot p-value histograms
@@ -398,11 +400,11 @@ ggsave(filename = sprintf("%spval_hists.pdf", outDir),
 volcPlot_top10Genes_logFC <- getVolcPlot(fitObjct = resLFC,
                                          topNGenes = 10,
                                          topNGenes_by = "log2FC",
-                                         useLog2FC4Sign = F)
+                                         useLog2FC4Sign = T)
 volcPlot_top10Genes_pAdj <- getVolcPlot(fitObjct = resLFC,
                                         topNGenes = 10,
                                         topNGenes_by = "adj.pVal_minLog10",
-                                        useLog2FC4Sign = F)
+                                        useLog2FC4Sign = T)
 
 volcPlotComb <- ggarrange(volcPlot_top10Genes_logFC,
                           volcPlot_top10Genes_pAdj)
@@ -414,7 +416,18 @@ ggsave(filename = sprintf("%svolcPlots.pdf", outDir),
 # Run functional enrichment
 ################################################################################
 DEGs <- rownames(results[results$padj <= 0.05, ])
-do_ORA <- function(DEGs, pathway_df, alternative = "greater", padj_method = "BH"){
+
+DEGs_df <- data.frame(locus_tag = DEGs,
+                      gene_name = annot$gene_name[match(DEGs, annot$locus_tag)],
+                      product = annot$product[match(DEGs, annot$locus_tag)])
+
+
+do_ORA <- function(
+        DEGs,
+        pathway_df,
+        alternative = "greater",
+        padj_method = "BH"
+){
         DEGs <- DEGs[DEGs %in% pathway_df$locus_tag]
         bg_genes <- unique(pathway_df$locus_tag)
         alternative = "greater"
@@ -422,20 +435,30 @@ do_ORA <- function(DEGs, pathway_df, alternative = "greater", padj_method = "BH"
         pvals <- c()
         for (i in seq_along(pws)){
                 pw <- pws[i]
-                pw_genes <- unique(pathway_df$locus_tag[pathway_df$pathway_id == pw])
+                pw_genes <- unique(
+                        pathway_df$locus_tag[pathway_df$pathway_id == pw]
+                )
                 DEGs_in_pw <- sum(DEGs %in% pw_genes)
                 DEGs_not_pw <- sum(!DEGs %in% pw_genes)
                 genes_in_pw <- length(unique(pw_genes)) - DEGs_in_pw
-                genes_not_pw <- sum((!bg_genes %in% DEGs) & (!bg_genes %in% pw_genes))
-                cont_tab <- matrix(c(DEGs_in_pw, DEGs_not_pw, genes_in_pw, genes_not_pw),
-                                   nrow = 2)
+                genes_not_pw <- sum(
+                        (!bg_genes %in% DEGs) & (!bg_genes %in% pw_genes)
+                )
+                cont_tab <- matrix(
+                        c(DEGs_in_pw, DEGs_not_pw, genes_in_pw, genes_not_pw),
+                        nrow = 2
+                )
                 pval <- fisher.test(cont_tab, alternative = alternative)$p.value
                 pvals <- c(pvals, pval)
         }
-        out <- data.frame(pathway_id = pws,
-                          pathway_name = pathway_df$pathway_name[match(pws, pathway_df$pathway_id)],
-                          p_value = pvals,
-                          p_adj = p.adjust(pvals, method = padj_method))
+        out <- data.frame(
+                pathway_id = pws,
+                pathway_name = pathway_df$pathway_name[
+                        match(pws, pathway_df$pathway_id)
+                ],
+                p_value = pvals,
+                p_adj = p.adjust(pvals, method = padj_method)
+        )
         return(out)
 }
 
